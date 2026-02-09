@@ -1,0 +1,154 @@
+name: Sync External Skills
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run sync without committing changes"
+        required: false
+        default: false
+        type: boolean
+      force_sync:
+        description: "Force sync even if SYNC_TARGETS unchanged"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-external-skills
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      SYNC_STATE_DIR: /tmp/sync-state
+      SYNC_TARGETS: |
+        anthropics/skills|main|skills/frontend-design|frontend-design
+        anthropics/skills|main|skills/skill-creator|skill-creator
+        google-gemini/gemini-cli|main|.gemini/skills/code-reviewer|code-reviewer
+
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v6
+
+      - name: Restore last SYNC_TARGETS hash
+        id: sync-targets-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SYNC_STATE_DIR }}
+          key: sync-targets-state-v1
+          restore-keys: |
+            sync-targets-state-
+
+      - name: Detect SYNC_TARGETS changes
+        id: sync-targets-check
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Hash the configured sync rules so we can skip repeated runs.
+          current_hash="$(printf '%s' "$SYNC_TARGETS" | sha256sum | awk '{print $1}')"
+          previous_hash=""
+
+          state_file="$SYNC_STATE_DIR/sync_targets.sha256"
+
+          if [[ -f "$state_file" ]]; then
+            previous_hash="$(cat "$state_file")"
+          fi
+
+          mkdir -p "$SYNC_STATE_DIR"
+          printf '%s' "$current_hash" > "$state_file"
+
+          force_sync="${{ github.event.inputs.force_sync || 'false' }}"
+
+          if [[ "$current_hash" == "$previous_hash" && "$force_sync" != 'true' ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "SYNC_TARGETS unchanged, skip sync and commit."
+            exit 0
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          if [[ "$force_sync" == 'true' ]]; then
+            echo "Force sync enabled, start syncing."
+          else
+            echo "SYNC_TARGETS changed, start syncing."
+          fi
+
+      - name: Sync configured folders
+        if: ${{ steps.sync-targets-check.outputs.changed == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Format: source_repo|source_ref|source_path|destination_path
+          printf '%s\n' "$SYNC_TARGETS" | while IFS='|' read -r source_repo source_ref source_path destination_path; do
+            if [[ -z "$source_repo" ]]; then
+              continue
+            fi
+
+            tmp_dir="$(mktemp -d)"
+            echo "Syncing ${source_repo}:${source_path} (${source_ref}) -> ${destination_path}"
+
+            # Use sparse checkout so only the configured directory is downloaded.
+            if ! git clone --depth 1 --filter=blob:none --sparse -b "$source_ref" "https://github.com/${source_repo}.git" "$tmp_dir/repo" 2>&1; then
+              echo "::warning::Failed to clone ${source_repo}@${source_ref}, skipping."
+              rm -rf "$tmp_dir"
+              continue
+            fi
+
+            (
+              cd "$tmp_dir/repo"
+              git sparse-checkout set "$source_path"
+            )
+
+            if [[ ! -d "$tmp_dir/repo/$source_path" ]]; then
+              echo "::warning::Path ${source_path} not found in ${source_repo}, skipping."
+              rm -rf "$tmp_dir"
+              continue
+            fi
+
+            rm -rf "$destination_path"
+            mkdir -p "$destination_path"
+            cp -R "$tmp_dir/repo/$source_path/." "$destination_path/"
+            rm -rf "$tmp_dir"
+            echo "✓ Synced ${source_repo}:${source_path}"
+          done
+
+      - name: Show workspace diff
+        if: ${{ steps.sync-targets-check.outputs.changed == 'true' }}
+        run: |
+          echo "### Sync Summary" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          git status --short | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Commit and push changes
+        if: ${{ steps.sync-targets-check.outputs.changed == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No changes detected, skip commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+          git commit -m "chore(sync): update external skills"
+          git push
+
+      - name: Save latest SYNC_TARGETS hash
+        if: ${{ steps.sync-targets-check.outputs.changed == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SYNC_STATE_DIR }}
+          key: sync-targets-state-v1
