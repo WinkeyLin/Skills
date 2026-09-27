@@ -17,8 +17,10 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 | 本地目录          | 来源仓库                   | 来源路径                       | 来源 ref |
 | ----------------- | -------------------------- | ------------------------------ | -------- |
 | `frontend-design` | `anthropics/skills`        | `skills/frontend-design`       | `main`   |
-| `skill-creator`   | `anthropics/skills`        | `skills/skill-creator`         | `main`   |
 | `code-reviewer`   | `google-gemini/gemini-cli` | `.gemini/skills/code-reviewer` | `main`   |
+| `impeccable`      | `pbakaus/impeccable`       | `.agents/skills/impeccable`    | `main`   |
+
+`impeccable/` 同时保留上游仓库根目录的 `LICENSE` 和 `NOTICE.md`。
 
 ## 目录结构
 
@@ -34,15 +36,15 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 │  └─ SKILL.md
 └─ (synced)
    ├─ frontend-design/
-   ├─ skill-creator/
-   └─ code-reviewer/
+   ├─ code-reviewer/
+   └─ impeccable/
 ```
 
 ## Skill: commit-message
 
 ### 核心功能
 
-- 读取 `git diff --cached` 获取 staged 变更
+- 仅读取 `git diff --cached` 获取 staged 变更，不检查 unstaged 或 untracked 改动
 - 自动分析变更类型并生成 Conventional Commits 风格 commit message
 - 给出变更要点列表，便于直接确认并提交
 
@@ -67,10 +69,9 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 ### 工作流程
 
 1. 获取 staged diff 和文件变更概览
-2. 查看最近 commit 风格
-3. 分析 diff 并分类 type 与 scope
-4. 生成格式化 commit message
-5. 用户确认后执行 `git commit`
+2. 分析 staged diff 并分类 type 与 scope
+3. 生成格式化 commit message
+4. 用户确认后执行 `git commit`
 
 ## Skill: explain
 
@@ -111,7 +112,7 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 - 定时触发：`on.schedule`
 - 手动触发：`on.workflow_dispatch`
 
-工作流会记录上一次执行时 `SYNC_TARGETS` 的哈希值；只有当 `SYNC_TARGETS` 发生变化时，才会继续拉取、比较并提交。
+定时执行每周检查上游更新。手动执行时，工作流会比较上一次执行的 `SYNC_TARGETS` 哈希值；规则未变化且未启用 `force_sync` 时跳过同步。每次执行结束后，工作流会删除此工作流较旧的运行记录，仅保留最新三次。
 
 手动触发时可设置 `dry_run = true`，只执行同步不提交。`dry_run` 不会更新该哈希记录。
 
@@ -122,11 +123,11 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 ```yaml
 on:
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * 1"
 ```
 
 - `cron` 使用 UTC 时区
-- 上例表示每天 UTC 03:00 运行一次
+- 上例表示每周一 UTC 03:00 运行一次
 
 ### 如何编辑自动同步规则（`SYNC_TARGETS`）
 
@@ -155,8 +156,8 @@ IFS='|' read -r source_repo source_ref source_path destination_path
 
 ```text
 anthropics/skills|main|skills/frontend-design|frontend-design
-anthropics/skills|main|skills/skill-creator|skill-creator
 google-gemini/gemini-cli|main|.gemini/skills/code-reviewer|code-reviewer
+pbakaus/impeccable|main|.agents/skills/impeccable|impeccable
 ```
 
 ### 规则编写建议

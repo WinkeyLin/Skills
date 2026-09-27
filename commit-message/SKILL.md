@@ -14,13 +14,12 @@ Generate structured commit messages from staged git changes using the Convention
 
 ## Workflow
 
-1. Run `git diff --cached --stat` to get an overview of changed files
+1. Run `git diff --cached --stat` to get an overview of staged files
 2. Run `git diff --cached` to get the full staged diff
-3. Run `git log --oneline -10` to understand recent commit style
-4. Analyze the diff and classify the change type
-5. Generate the commit message following the format below
-6. Present the message to the user for confirmation
-7. Run `git commit -m "<message>"` after user approval
+3. Analyze only the staged diff and classify the change type
+4. Generate the commit message following the format below
+5. Present the message to the user for confirmation
+6. Run `git commit -m "<message>"` after user approval
 
 ## Commit Message Format
 
@@ -128,6 +127,8 @@ feat(api): add pagination support for user list endpoint
 ## Rules
 
 - Always read the full staged diff before generating the message
+- Inspect only staged changes; do not run commands that reveal unstaged or untracked changes
+- If a file has both staged and unstaged edits, describe only the staged version shown by `git diff --cached`
 - Never fabricate changes not present in the diff
 - Write the commit message in English regardless of conversation language
 - If no files are staged, inform the user and suggest `git add`

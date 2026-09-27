@@ -14,9 +14,10 @@ on:
         default: false
         type: boolean
   schedule:
-    - cron: "0 3 * * *"
+    - cron: "0 3 * * 1"
 
 permissions:
+  actions: write
   contents: write
 
 concurrency:
@@ -30,8 +31,8 @@ jobs:
       SYNC_STATE_DIR: /tmp/sync-state
       SYNC_TARGETS: |
         anthropics/skills|main|skills/frontend-design|frontend-design
-        anthropics/skills|main|skills/skill-creator|skill-creator
         google-gemini/gemini-cli|main|.gemini/skills/code-reviewer|code-reviewer
+        pbakaus/impeccable|main|.agents/skills/impeccable|impeccable
 
     steps:
       - name: Checkout current repository
@@ -42,9 +43,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.SYNC_STATE_DIR }}
-          key: sync-targets-state-v1
+          key: sync-targets-state-v2-${{ github.run_id }}
           restore-keys: |
-            sync-targets-state-
+            sync-targets-state-v2-
 
       - name: Detect SYNC_TARGETS changes
         id: sync-targets-check
@@ -66,8 +67,13 @@ jobs:
           printf '%s' "$current_hash" > "$state_file"
 
           force_sync="${{ github.event.inputs.force_sync || 'false' }}"
+          if [[ "$current_hash" == "$previous_hash" ]]; then
+            echo "rules_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "rules_changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-          if [[ "$current_hash" == "$previous_hash" && "$force_sync" != 'true' ]]; then
+          if [[ "${{ github.event_name }}" != 'schedule' && "$current_hash" == "$previous_hash" && "$force_sync" != 'true' ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "SYNC_TARGETS unchanged, skip sync and commit."
             exit 0
@@ -76,6 +82,8 @@ jobs:
           echo "changed=true" >> "$GITHUB_OUTPUT"
           if [[ "$force_sync" == 'true' ]]; then
             echo "Force sync enabled, start syncing."
+          elif [[ "${{ github.event_name }}" == 'schedule' ]]; then
+            echo "Scheduled upstream check, start syncing."
           else
             echo "SYNC_TARGETS changed, start syncing."
           fi
@@ -116,6 +124,9 @@ jobs:
             rm -rf "$destination_path"
             mkdir -p "$destination_path"
             cp -R "$tmp_dir/repo/$source_path/." "$destination_path/"
+            if [[ "$source_repo" == "pbakaus/impeccable" ]]; then
+              cp "$tmp_dir/repo/LICENSE" "$tmp_dir/repo/NOTICE.md" "$destination_path/"
+            fi
             rm -rf "$tmp_dir"
             echo "✓ Synced ${source_repo}:${source_path}"
           done
@@ -147,8 +158,28 @@ jobs:
           git push
 
       - name: Save latest SYNC_TARGETS hash
-        if: ${{ steps.sync-targets-check.outputs.changed == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
+        if: ${{ steps.sync-targets-check.outputs.rules_changed == 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
         uses: actions/cache/save@v4
         with:
           path: ${{ env.SYNC_STATE_DIR }}
-          key: sync-targets-state-v1
+          key: sync-targets-state-v2-${{ github.run_id }}
+
+  cleanup:
+    needs: sync
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Keep latest three workflow runs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          runs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/sync-external-skills.yml/runs?per_page=100" \
+            --jq '.workflow_runs[] | [.created_at, .id] | @tsv')"
+          mapfile -t run_ids < <(printf '%s\n' "$runs" | sort -r | cut -f2)
+
+          for (( index=3; index<${#run_ids[@]}; index++ )); do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/runs/${run_ids[$index]}"
+          done
