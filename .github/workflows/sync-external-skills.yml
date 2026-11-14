@@ -33,6 +33,7 @@ jobs:
         anthropics/skills|main|skills/frontend-design|frontend-design
         google-gemini/gemini-cli|main|.gemini/skills/code-reviewer|code-reviewer
         pbakaus/impeccable|main|.agents/skills/impeccable|impeccable
+        googlechrome/modern-web-guidance|main|skills/modern-web-guidance|modern-web-guidance
 
     steps:
       - name: Checkout current repository

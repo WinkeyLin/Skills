@@ -14,11 +14,12 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 
 ### 社区维护 Skills（自动同步）
 
-| 本地目录          | 来源仓库                   | 来源路径                       | 来源 ref |
-| ----------------- | -------------------------- | ------------------------------ | -------- |
-| `frontend-design` | `anthropics/skills`        | `skills/frontend-design`       | `main`   |
-| `code-reviewer`   | `google-gemini/gemini-cli` | `.gemini/skills/code-reviewer` | `main`   |
-| `impeccable`      | `pbakaus/impeccable`       | `.agents/skills/impeccable`    | `main`   |
+| 本地目录              | 来源仓库                           | 来源路径                       | 来源 ref |
+| --------------------- | ---------------------------------- | ------------------------------ | -------- |
+| `frontend-design`     | `anthropics/skills`                | `skills/frontend-design`       | `main`   |
+| `code-reviewer`       | `google-gemini/gemini-cli`         | `.gemini/skills/code-reviewer` | `main`   |
+| `impeccable`          | `pbakaus/impeccable`               | `.agents/skills/impeccable`    | `main`   |
+| `modern-web-guidance` | `googlechrome/modern-web-guidance` | `skills/modern-web-guidance`   | `main`   |
 
 `impeccable/` 同时保留上游仓库根目录的 `LICENSE` 和 `NOTICE.md`。
 
@@ -37,7 +38,8 @@ Kanro 自用的 Agent Skills 仓库，由两部分组成：
 └─ (synced)
    ├─ frontend-design/
    ├─ code-reviewer/
-   └─ impeccable/
+   ├─ impeccable/
+   └─ modern-web-guidance/
 ```
 
 ## Skill: commit-message
@@ -158,6 +160,7 @@ IFS='|' read -r source_repo source_ref source_path destination_path
 anthropics/skills|main|skills/frontend-design|frontend-design
 google-gemini/gemini-cli|main|.gemini/skills/code-reviewer|code-reviewer
 pbakaus/impeccable|main|.agents/skills/impeccable|impeccable
+googlechrome/modern-web-guidance|main|skills/modern-web-guidance|modern-web-guidance
 ```
 
 ### 规则编写建议
